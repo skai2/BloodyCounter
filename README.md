@@ -5,7 +5,7 @@ Program uses OpenCV and Tesseract OCR to extract the in-game "Blood Point notifi
 and provides a simple window to serve as a counter.
 
 RECOMMENDED SETUP:
-1080p Resolution or higher
+1. 1080p Resolution or higher
 
 USAGE:
 1. Download and extract zip
