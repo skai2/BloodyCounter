@@ -66,7 +66,7 @@ public class BPCounter extends JFrame {
     private static int sleepTime = 25;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
-    private final static String version = "17.11.17.01.02";
+    private final static String version = "17.11.17.01.13";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -156,7 +156,7 @@ public class BPCounter extends JFrame {
             public void actionPerformed(ActionEvent event) {
                 JComboBox<Integer> combo = (JComboBox<Integer>) event.getSource();
                 sleepTime = (int)combo.getSelectedItem();
-                System.out.println(sleepTime);
+//                System.out.println(sleepTime);
             }
         });
         add(sleepBox);
@@ -528,10 +528,11 @@ public class BPCounter extends JFrame {
                 lastTime = System.currentTimeMillis();
             }
             long elapsedTime = System.currentTimeMillis() - lastTime;
-            if ((lastPack != null && elapsedTime < 3500
-                    && (similarity(pack.name, lastPack.name) >= precision
-                    && (((double) (pack.points / lastPack.points) > 0.9) || (double) (pack.points / lastPack.points) < 1.1)))
-                    || pack.points < 0) {
+            if    ((lastPack != null && elapsedTime < 3500
+                && (similarity(pack.name, lastPack.name) >= precision
+                && (((double) (pack.points / lastPack.points) > 0.8) || (double) (pack.points / lastPack.points) < 1.2)))
+                
+                || pack.points < 0) {
                 return;
             }
             lastPack = pack;
