@@ -19,7 +19,12 @@ import java.awt.event.AdjustmentListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.TimeUnit;
+import javax.imageio.ImageIO;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import static javax.swing.JFrame.EXIT_ON_CLOSE;
@@ -38,6 +43,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 import javax.swing.JComboBox;
+import org.opencv.core.Size;
 
 /**
  *
@@ -66,7 +72,10 @@ public class BPCounter extends JFrame {
     private static int sleepTime = 25;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
-    private final static String version = "17.11.17.01.21";
+    private static ITesseract tesseract;
+    private static Queue<BloodPacket> packQueue;
+    private SwingWorker fetchWorker;
+    private final static String version = "17.11.17.13.49";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -86,7 +95,8 @@ public class BPCounter extends JFrame {
         System.load("C:/OpenCV3.3/opencv/build/java/x64/opencv_java330.dll");
 
         InitUI();
-        new BackgroundBPFetch().execute();
+        fetchWorker = new BackgroundBPFetch();
+        fetchWorker.execute();
     }
 
     private void InitUI() {
@@ -95,6 +105,11 @@ public class BPCounter extends JFrame {
         setSize(windowX, windowY);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
+
+        // Prepare Tesseract and image queue
+        tesseract = new Tesseract();
+        tesseract.setTessVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345789+-!");
+        packQueue = new LinkedList<BloodPacket>();
 
         JPanel frame1 = new JPanel();
         frame1.setPreferredSize(new Dimension((windowX / 4) - 10, windowY / 5));
@@ -155,12 +170,12 @@ public class BPCounter extends JFrame {
             @Override
             public void actionPerformed(ActionEvent event) {
                 JComboBox<Integer> combo = (JComboBox<Integer>) event.getSource();
-                sleepTime = (int)combo.getSelectedItem();
+                sleepTime = (int) combo.getSelectedItem();
 //                System.out.println(sleepTime);
             }
         });
         add(sleepBox);
-        
+
         JToggleButton processingToggle = new JToggleButton("No Pre-Processing");
         ItemListener processingListener = new ItemListener() {
             public void itemStateChanged(ItemEvent itemEvent) {
@@ -225,22 +240,81 @@ public class BPCounter extends JFrame {
         @Override
         protected Integer doInBackground() throws Exception {
             while (true) {
-                BufferedImage screen = getScreenCapture(0);
-                if (!noProcessing) {
-                    screen = processScreenCapture(screen);
+                if (packQueue.size() < 1) {
+                    long initTime = System.currentTimeMillis();
+                    BufferedImage screen = getScreenCapture(0);
+                    if (!noProcessing) {
+                        long procTime = System.currentTimeMillis();
+                        screen = processScreenCapture(screen);
+                        System.out.println("Proc: " + (System.currentTimeMillis() - procTime));
+                    }
+                    Mat testBlack = new Mat();
+                    Imgproc.cvtColor(img2Mat(screen), testBlack, Imgproc.COLOR_BGR2GRAY);
+                    System.out.println("Count: " + Core.countNonZero(testBlack));
+                    if (Core.countNonZero(testBlack) < 150000) {
+                        packQueue.add(new BloodPacket("err", -1, screen, System.currentTimeMillis()));
+                    }
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(sleepTime);
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                    System.out.println("Full: " + (System.currentTimeMillis() - initTime));
+                } else {
+                    while (!packQueue.isEmpty()) {
+                        long readTime = System.currentTimeMillis();
+                        BloodPacket pack = readBloodPacket(packQueue.poll());
+                        System.out.println("Read: " + (System.currentTimeMillis() - readTime));
+                        long addTime = System.currentTimeMillis();
+                        bps.add(pack);
+                        System.out.println("Add: " + (System.currentTimeMillis() - addTime));
+                        long uiTime = System.currentTimeMillis();
+                        objectiveL.setText("" + bps.objective);
+                        survivalL.setText("" + bps.survival);
+                        altruismL.setText("" + bps.altruism);
+                        boldnessL.setText("" + bps.boldness);
+                        unknownL.setText("" + bps.unknown);
+                        totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
+                        if (bps.objective >= 5000) {
+                            objectiveL.setForeground(Color.RED);
+                        }
+                        if (bps.survival >= 5000) {
+                            survivalL.setForeground(Color.RED);
+                        }
+                        if (bps.altruism >= 5000) {
+                            altruismL.setForeground(Color.RED);
+                        }
+                        if (bps.boldness >= 5000) {
+                            boldnessL.setForeground(Color.RED);
+                        }
+                        if (bps.unknown >= 5000) {
+                            unknownL.setForeground(Color.RED);
+                        }
+                        objectiveL.validate();
+                        survivalL.validate();
+                        altruismL.validate();
+                        boldnessL.validate();
+                        unknownL.validate();
+                        totalL.validate();
+                        System.out.println("UI: " + (System.currentTimeMillis() - uiTime));
+                    }
                 }
-                BloodPacket pack = readBloodPacket(screen);
-                bps.add(pack);
+            }
+        }
+    }
 
-//                screen = getScreenCapture(1);
-//                if (!noProcessing) screen = processScreenCapture(screen);
-//                pack = readBloodPacket(screen);
-//                bps.add(pack);
-//                
-//                screen = getScreenCapture(2);
-//                if (!noProcessing) screen = processScreenCapture(screen);
-//                pack = readBloodPacket(screen);
-//                bps.add(pack);
+    private class BackgroundBPRead extends SwingWorker<Integer, String> {
+
+        @Override
+        protected Integer doInBackground() throws Exception {
+            while (!packQueue.isEmpty()) {
+                long readTime = System.currentTimeMillis();
+                BloodPacket pack = readBloodPacket(packQueue.poll());
+                System.out.println("Read: " + (System.currentTimeMillis() - readTime));
+                long addTime = System.currentTimeMillis();
+                bps.add(pack);
+                System.out.println("Add: " + (System.currentTimeMillis() - addTime));
+                long uiTime = System.currentTimeMillis();
                 objectiveL.setText("" + bps.objective);
                 survivalL.setText("" + bps.survival);
                 altruismL.setText("" + bps.altruism);
@@ -268,12 +342,9 @@ public class BPCounter extends JFrame {
                 boldnessL.validate();
                 unknownL.validate();
                 totalL.validate();
-                try {
-                    TimeUnit.MILLISECONDS.sleep(sleepTime);
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
+                System.out.println("UI: " + (System.currentTimeMillis() - uiTime));
             }
+            return 1;
         }
     }
 
@@ -285,7 +356,7 @@ public class BPCounter extends JFrame {
             Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
             int widthArea = (int) Math.round(screenSize.getHeight() / 4);
             int heightArea = (int) Math.round(screenSize.getHeight() / 13.5);
-            Rectangle captureArea = new Rectangle(widthArea / 2, (screenSize.height / 2) + (heightArea * position), widthArea, heightArea);
+            Rectangle captureArea = new Rectangle((widthArea / 2), (screenSize.height / 2) + (heightArea * position), (widthArea * 3 / 4), heightArea);
             BufferedImage screenCapture = screenCapBot.createScreenCapture(captureArea);
 //            ImageIO.write(screenCapture, format, new File(fileName));
             return screenCapture;
@@ -323,6 +394,7 @@ public class BPCounter extends JFrame {
 
         BufferedImage resultImage = mat2Img(resultMat);
         resultImage = img2BufferedImage(resultImage.getScaledInstance(resultImage.getWidth() * 3, resultImage.getHeight() * 3, Image.SCALE_SMOOTH));
+        Imgproc.GaussianBlur(resultMat, resultMat, new Size(5, 5), 0);
         try {
 //            ImageIO.write(resultImage, format, new File(fileName));
         } catch (Exception ex) {
@@ -398,11 +470,9 @@ public class BPCounter extends JFrame {
         return bimage;
     }
 
-    private BloodPacket readBloodPacket(BufferedImage image) {
-        ITesseract tesseract = new Tesseract();
-        tesseract.setTessVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345789+-!");
+    private BloodPacket readBloodPacket(BloodPacket pack) {
         try {
-            String text = tesseract.doOCR(image);
+            String text = tesseract.doOCR(pack.snap);
 //            System.out.println(text);
             String token[] = text.split("\n");
             String name = "";
@@ -416,7 +486,7 @@ public class BPCounter extends JFrame {
             } catch (Exception ex) {
                 points = -1;
             }
-            return new BloodPacket(name, points);
+            return new BloodPacket(name, points, pack.snap, pack.time);
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -428,80 +498,87 @@ public class BPCounter extends JFrame {
         String category;
         String name;
         int points;
+        BufferedImage snap;
+        long time;
         double accuracy = 0.0;
         final double precision = 0.7;
 
-        public BloodPacket(String name, int points) {
+        public BloodPacket(String name, int points, BufferedImage snap, long time) {
             this.name = name;
             this.points = points;
             this.category = "Error";
+            this.snap = snap;
+            this.time = time;
 
             // UNCATEGORIZABLE YET
-            classify(category0, "GOOD SKILL CHECK");
-            classify(category0, "GREAT SKILL CHECK");
-            classify(category0, "WAKE UP!");
+            classify(category0, "GOOD SKILL CHECK", 0, 150);
+            classify(category0, "GREAT SKILL CHECK", 0, 150);
+            classify(category0, "WAKE UP!", 0, 150);
 
             // OBJECTIVE ---------------------------------------
-            classify(category1, "COOP ACTION");
+            classify(category1, "COOP ACTION", 1, 8000);
 //            classify(category1, "GOOD SKILL CHECK");
 //            classify(category1, "GREAT SKILL CHECK");
-            classify(category1, "HEX SKILL CHECK");
-            classify(category1, "REPAIRS");
-            classify(category1, "MAP SCOUT");
-            classify(category1, "CHEST SEARCHED");
-            classify(category1, "UNLOCKING");
-            classify(category1, "HATCH ESCAPE");
-            classify(category1, "HATCH OPEN");
+            classify(category1, "HEX SKILL CHECK", 0, 150);
+            classify(category1, "REPAIRS", 1, 1250);
+            classify(category1, "MAP SCOUT", 0, 150);
+            classify(category1, "CHEST SEARCHED", 0, 250);
+            classify(category1, "UNLOCKING", 1, 1250);
+            classify(category1, "HATCH ESCAPE", 0, 2000);
+            classify(category1, "HATCH OPEN", 0, 2000);
 
             // SURVIVAL ---------------------------------------
-            classify(category2, "KILLER GRASP ESCAPE");
-            classify(category2, "STRUGGLE");
-            classify(category2, "SELF-HEALING");
-            classify(category2, "SURVIVED");
-            classify(category2, "TRAP ESCAPE");
-            classify(category2, "HOOK ESCAPE");
-            classify(category2, "DISTRACTION");
+            classify(category2, "KILLER GRASP ESCAPE", 0, 500);
+            classify(category2, "STRUGGLE", 5, 898);
+            classify(category2, "SELF-HEALING", 1, 300);
+            classify(category2, "SURVIVED", 0, 5000);
+            classify(category2, "TRAP ESCAPE", 0, 500);
+            classify(category2, "HOOK ESCAPE", 0, 1500);
+            classify(category2, "DISTRACTION", 0, 150);
 //            classify(category2, "WAKE UP!");
-            classify(category2, "SNAPPED OUT OF IT");
+            classify(category2, "SNAPPED OUT OF IT", 0, 200);
 
             // ALTRUISM ---------------------------------------
-            classify(category3, "ASSIST");
-            classify(category3, "DISTRACTION");
-            classify(category3, "HEAL");
-            classify(category3, "TRAP RESCUE");
-            classify(category3, "KILLER GRASP RESCUE");
+            classify(category3, "ASSIST", 250, 315);
+            classify(category3, "DISTRACTION", 0, 250);
+            classify(category3, "HEAL", 400, 500);
+            classify(category3, "TRAP RESCUE", 1000, 1250);
+            classify(category3, "KILLER GRASP RESCUE", 0, 1250);
 //            classify(category3, "GOOD SKILL CHECK");
 //            classify(category3, "GREAT SKILL CHECK");
-            classify(category3, "HOOK RESCUE");
-            classify(category3, "REUNITED");
-            classify(category3, "PROTECTION");
+            classify(category3, "HOOK RESCUE", 1500, 1875);
+            classify(category3, "REUNITED", 0, 200);
+            classify(category3, "PROTECTION", 0, 200);
 //            classify(category3, "WAKE UP!");
 
             // BOLDNESS ---------------------------------------
-            classify(category4, "BOLD");
-            classify(category4, "CHASED");
-            classify(category4, "ESCAPED");
-            classify(category4, "KILLER STUN");
-            classify(category4, "KILLER BLIND");
-            classify(category4, "KILLER BURN");
-            classify(category4, "HOOK SABOTAGE");
-            classify(category4, "TRAP DISARM");
-            classify(category4, "HAG TRAP DISARM");
-            classify(category4, "TRAP SABOTAGE");
-            classify(category4, "CLEANSED");
-            classify(category4, "CLEANSING");
+            classify(category4, "BOLD", 1, 250);
+            classify(category4, "CHASED", 1, 8000);
+            classify(category4, "ESCAPED", 0, 250);
+            classify(category4, "KILLER STUN", 0, 1000);
+            classify(category4, "KILLER BLIND", 0, 250);
+            classify(category4, "KILLER BURN", 0, 350);
+            classify(category4, "HOOK SABOTAGE", 0, 500);
+            classify(category4, "TRAP DISARM", 0, 300);
+            classify(category4, "HAG TRAP DISARM", 0, 400);
+            classify(category4, "TRAP SABOTAGE", 0, 250);
+            classify(category4, "CLEANSED", 600, 1000);
+            classify(category4, "CLEANSING", 600, 1000);
 //            classify(category4, "GOOD SKILL CHECK");
 //            classify(category4, "GREAT SKILL CHECK");
-            classify(category4, "BASEMENT TIME");
+            classify(category4, "BASEMENT TIME", 1, 8000);
 
 //            System.out.println(this.category  + " (" +  this.accuracy*100 + "%) " + this.name  + " " +  this.points);
         }
 
-        private void classify(String category, String testName) {
+        private void classify(String category, String testName, int min, int max) {
             double temp = similarity(this.name, testName);
-            if (temp >= this.precision && temp > this.accuracy) {
+            if (temp >= this.precision && temp > this.accuracy && this.points >= min && this.points <= max) {
                 this.accuracy = temp;
                 this.category = category;
+            }
+            if (temp >= 90 && !(this.points >= min && this.points <= max)) {
+                this.points = min;
             }
         }
     }
@@ -510,7 +587,7 @@ public class BPCounter extends JFrame {
 
         int objective, survival, altruism, boldness, unknown;
         long lastTime;
-        final double precision = 0.7;
+        final double precision = 0.5;
         BloodPacket lastPack;
 
         public BloodPoints() {
@@ -519,7 +596,7 @@ public class BPCounter extends JFrame {
             this.altruism = 0;
             this.boldness = 0;
             this.unknown = 0;
-            this.lastPack = new BloodPacket("Unknown", -1);
+            this.lastPack = new BloodPacket("Unknown", -1, null, 0);
             this.lastTime = -1;
         }
 
@@ -527,12 +604,11 @@ public class BPCounter extends JFrame {
             if (lastTime == -1) {
                 lastTime = System.currentTimeMillis();
             }
-            long elapsedTime = System.currentTimeMillis() - lastTime;
-            if    ((lastPack != null && elapsedTime < 3500
-                && (similarity(pack.name, lastPack.name) >= precision
-                && (((double) (pack.points / lastPack.points) > 0.8) || (double) (pack.points / lastPack.points) < 1.2)))
-                
-                || pack.points < 0) {
+            long elapsedTime = pack.time - lastTime;
+            if ((lastPack != null && elapsedTime < 3500
+                    && (similarity(pack.name, lastPack.name) >= precision
+                    && (((double) (pack.points / lastPack.points) > 0.8) || (double) (pack.points / lastPack.points) < 1.2)))
+                    || pack.points < 0) {
                 return;
             }
             lastPack = pack;
@@ -563,7 +639,12 @@ public class BPCounter extends JFrame {
             }
             log.setText(pack.category + " - " + pack.name + ": " + pack.points + log.getText());
             log.validate();
-//            System.out.println(pack.category  + " (" +  pack.accuracy*100 + "%) " + pack.name  + " " +  pack.points);
+            try {
+                File outputFile = new File("./debug/" + pack.category + "-" + pack.name + "-" + pack.points + "." + format);
+                ImageIO.write(pack.snap, format, outputFile);
+            } catch (Exception ex) {
+//                    ex.printStackTrace();
+            }
         }
     }
 
