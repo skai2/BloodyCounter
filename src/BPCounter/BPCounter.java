@@ -66,7 +66,7 @@ public class BPCounter extends JFrame {
     private static int sleepTime = 25;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
-    private final static String version = "17.11.17.01.13";
+    private final static String version = "17.11.17.01.21";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -134,11 +134,11 @@ public class BPCounter extends JFrame {
 
         JScrollPane scroll = new JScrollPane(log, JScrollPane.VERTICAL_SCROLLBAR_ALWAYS, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scroll.setPreferredSize(new Dimension(windowX - 20, (windowY * 2 / 5) - 10));
-        scroll.getVerticalScrollBar().addAdjustmentListener(new AdjustmentListener() {
-            public void adjustmentValueChanged(AdjustmentEvent e) {
-                e.getAdjustable().setValue(e.getAdjustable().getMaximum());
-            }
-        });
+//        scroll.getVerticalScrollBar().addAdjustmentListener(new AdjustmentListener() {
+//            public void adjustmentValueChanged(AdjustmentEvent e) {
+//                e.getAdjustable().setValue(e.getAdjustable().getMaximum());
+//            }
+//        });
         add(scroll);
 
         add(new JLabel("Sleep:"));
@@ -557,11 +557,11 @@ public class BPCounter extends JFrame {
             if (!debug && pack.category.equals("Error")) {
                 return;
             }
-            log.append(pack.category + " - " + pack.name + ": " + pack.points);
+            log.setText("\n" + log.getText());
             if (debug) {
-                log.append(" (" + (int) Math.round(pack.accuracy * 100) + "%)");
+                log.setText(" (" + (int) Math.round(pack.accuracy * 100) + "%)" + log.getText());
             }
-            log.append("\n");
+            log.setText(pack.category + " - " + pack.name + ": " + pack.points + log.getText());
             log.validate();
 //            System.out.println(pack.category  + " (" +  pack.accuracy*100 + "%) " + pack.name  + " " +  pack.points);
         }
