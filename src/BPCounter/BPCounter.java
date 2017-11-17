@@ -14,13 +14,10 @@ import java.awt.Robot;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.AdjustmentEvent;
-import java.awt.event.AdjustmentListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
@@ -51,8 +48,11 @@ import org.opencv.core.Size;
  */
 public class BPCounter extends JFrame {
 
+    // Variables to save test images
     final static String format = "png";
     final static String fileName = "PartialScreenshot." + format;
+    
+    // Main Variables (Counter object and UI Elements)
     private static BloodPoints bps;
     private final static String category1 = "Objective";
     private static JLabel objectiveL = new JLabel();
@@ -69,13 +69,25 @@ public class BPCounter extends JFrame {
     private static JTextArea log = new JTextArea();
     private final static int windowX = 340;
     private final static int windowY = 300;
-    private static int sleepTime = 25;
+    
+    // Settings and program variables
+    private static int sleepTime = 0;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
     private static ITesseract tesseract;
+    private static GraphicsEnvironment ge;
+    private static GraphicsDevice mainScreen;
+    private static Robot screenCapBot;
+    private static Dimension screenSize;
+    private int widthArea;
+    private int heightArea;
+    private static Rectangle captureArea;
+    private static double captureSize;
     private static Queue<BloodPacket> packQueue;
     private SwingWorker fetchWorker;
-    private final static String version = "17.11.17.13.49";
+    
+    // Version String
+    private final static String version = "17.11.17.20.38";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -93,8 +105,25 @@ public class BPCounter extends JFrame {
         bps = new BloodPoints();
         System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
         System.load("C:/OpenCV3.3/opencv/build/java/x64/opencv_java330.dll");
+        
+        // Prepare Tesseract and image queue
+        tesseract = new Tesseract();
+        tesseract.setTessVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345789+-!");
+        packQueue = new LinkedList<BloodPacket>();
 
+        // Prepare settings for capture
+        ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        mainScreen = ge.getDefaultScreenDevice();
+        try {screenCapBot = new Robot(mainScreen);} catch (Exception ex) {ex.printStackTrace();}
+        screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        widthArea = (int) Math.round(screenSize.getHeight() / 4);
+        heightArea = (int) Math.round(screenSize.getHeight() / 13.5);
+        captureArea = new Rectangle((widthArea / 2), (screenSize.height / 2), (widthArea * 3 / 4), heightArea);
+        captureSize = captureArea.height * captureArea.width;
+
+        // Initiate
         InitUI();
+        reset();
         fetchWorker = new BackgroundBPFetch();
         fetchWorker.execute();
     }
@@ -105,11 +134,6 @@ public class BPCounter extends JFrame {
         setSize(windowX, windowY);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-
-        // Prepare Tesseract and image queue
-        tesseract = new Tesseract();
-        tesseract.setTessVariable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ012345789+-!");
-        packQueue = new LinkedList<BloodPacket>();
 
         JPanel frame1 = new JPanel();
         frame1.setPreferredSize(new Dimension((windowX / 4) - 10, windowY / 5));
@@ -158,14 +182,14 @@ public class BPCounter extends JFrame {
 
         add(new JLabel("Sleep:"));
         JComboBox sleepBox = new JComboBox<Integer>();
+        sleepBox.addItem(0);
         sleepBox.addItem(10);
         sleepBox.addItem(25);
         sleepBox.addItem(50);
         sleepBox.addItem(100);
         sleepBox.addItem(250);
         sleepBox.addItem(500);
-        sleepBox.addItem(1000);
-        sleepBox.setSelectedItem(100);
+        sleepBox.setSelectedItem(0);
         sleepBox.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent event) {
@@ -206,157 +230,123 @@ public class BPCounter extends JFrame {
 
         JButton reset = new JButton("Reset");
         reset.addActionListener((ActionEvent event) -> {
-            log.setText("");
-            bps.objective = 0;
-            bps.survival = 0;
-            bps.altruism = 0;
-            bps.boldness = 0;
-            bps.unknown = 0;
-            objectiveL.setText("" + bps.objective);
-            survivalL.setText("" + bps.survival);
-            altruismL.setText("" + bps.altruism);
-            boldnessL.setText("" + bps.boldness);
-            unknownL.setText("" + bps.unknown);
-            totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
-            objectiveL.setForeground(Color.BLACK);
-            survivalL.setForeground(Color.BLACK);
-            altruismL.setForeground(Color.BLACK);
-            boldnessL.setForeground(Color.BLACK);
-            unknownL.setForeground(Color.BLACK);
-            objectiveL.validate();
-            survivalL.validate();
-            altruismL.validate();
-            boldnessL.validate();
-            unknownL.validate();
-            totalL.validate();
+            reset();
         });
         add(reset);
 
         add(new JLabel("version: " + version));
     }
 
+    private void reset() {
+        log.setText("");
+        bps.objective = 0;
+        bps.survival = 0;
+        bps.altruism = 0;
+        bps.boldness = 0;
+        bps.unknown = 0;
+        objectiveL.setText("" + bps.objective);
+        survivalL.setText("" + bps.survival);
+        altruismL.setText("" + bps.altruism);
+        boldnessL.setText("" + bps.boldness);
+        unknownL.setText("" + bps.unknown);
+        totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
+        objectiveL.setForeground(Color.BLACK);
+        survivalL.setForeground(Color.BLACK);
+        altruismL.setForeground(Color.BLACK);
+        boldnessL.setForeground(Color.BLACK);
+        unknownL.setForeground(Color.BLACK);
+        objectiveL.validate();
+        survivalL.validate();
+        altruismL.validate();
+        boldnessL.validate();
+        unknownL.validate();
+        totalL.validate();
+    }
+
     private class BackgroundBPFetch extends SwingWorker<Integer, String> {
 
         @Override
         protected Integer doInBackground() throws Exception {
+//            double prevRatio = 0;
+            Mat testBlack = new Mat();
             while (true) {
-                if (packQueue.size() < 1) {
-                    long initTime = System.currentTimeMillis();
-                    BufferedImage screen = getScreenCapture(0);
-                    if (!noProcessing) {
-                        long procTime = System.currentTimeMillis();
-                        screen = processScreenCapture(screen);
-                        System.out.println("Proc: " + (System.currentTimeMillis() - procTime));
+                // Begin by capturing screen
+                long initTime = System.currentTimeMillis();
+                BufferedImage screen = getScreenCapture(0);
+
+                // Process capture
+//                long procTime = System.currentTimeMillis();
+                screen = processScreenCapture(screen);
+//                System.out.println("Proc: " + (System.currentTimeMillis() - procTime));
+
+                // Test black ratio to see if worth doing OCR
+                Imgproc.cvtColor(img2Mat(screen), testBlack, Imgproc.COLOR_BGR2GRAY);
+                double ratioBW = 1 - ((double) Core.countNonZero(testBlack) / captureSize);
+//                System.out.println("Ratio: " + ratioBW);
+                if (ratioBW > 0.01) {
+//                    prevRatio = ratioBW;
+
+                    // Do OCR
+                    packQueue.add(new BloodPacket("err", -1, screen, System.currentTimeMillis()));
+                    long readTime = System.currentTimeMillis();
+                    BloodPacket pack = readBloodPacket(packQueue.poll());
+                    System.out.println("Read: " + (System.currentTimeMillis() - readTime));
+
+                    // Try adding packet to counter
+//                    long addTime = System.currentTimeMillis();
+                    bps.add(pack);
+//                    System.out.println("Add: " + (System.currentTimeMillis() - addTime));
+
+                    // Update counter UI
+//                    long uiTime = System.currentTimeMillis();
+                    objectiveL.setText("" + bps.objective);
+                    survivalL.setText("" + bps.survival);
+                    altruismL.setText("" + bps.altruism);
+                    boldnessL.setText("" + bps.boldness);
+                    unknownL.setText("" + bps.unknown);
+                    totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
+                    if (bps.objective >= 5000) {
+                        objectiveL.setForeground(Color.RED);
                     }
-                    Mat testBlack = new Mat();
-                    Imgproc.cvtColor(img2Mat(screen), testBlack, Imgproc.COLOR_BGR2GRAY);
-                    System.out.println("Count: " + Core.countNonZero(testBlack));
-                    if (Core.countNonZero(testBlack) < 150000) {
-                        packQueue.add(new BloodPacket("err", -1, screen, System.currentTimeMillis()));
+                    if (bps.survival >= 5000) {
+                        survivalL.setForeground(Color.RED);
                     }
-                    try {
-                        TimeUnit.MILLISECONDS.sleep(sleepTime);
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
+                    if (bps.altruism >= 5000) {
+                        altruismL.setForeground(Color.RED);
                     }
-                    System.out.println("Full: " + (System.currentTimeMillis() - initTime));
-                } else {
-                    while (!packQueue.isEmpty()) {
-                        long readTime = System.currentTimeMillis();
-                        BloodPacket pack = readBloodPacket(packQueue.poll());
-                        System.out.println("Read: " + (System.currentTimeMillis() - readTime));
-                        long addTime = System.currentTimeMillis();
-                        bps.add(pack);
-                        System.out.println("Add: " + (System.currentTimeMillis() - addTime));
-                        long uiTime = System.currentTimeMillis();
-                        objectiveL.setText("" + bps.objective);
-                        survivalL.setText("" + bps.survival);
-                        altruismL.setText("" + bps.altruism);
-                        boldnessL.setText("" + bps.boldness);
-                        unknownL.setText("" + bps.unknown);
-                        totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
-                        if (bps.objective >= 5000) {
-                            objectiveL.setForeground(Color.RED);
-                        }
-                        if (bps.survival >= 5000) {
-                            survivalL.setForeground(Color.RED);
-                        }
-                        if (bps.altruism >= 5000) {
-                            altruismL.setForeground(Color.RED);
-                        }
-                        if (bps.boldness >= 5000) {
-                            boldnessL.setForeground(Color.RED);
-                        }
-                        if (bps.unknown >= 5000) {
-                            unknownL.setForeground(Color.RED);
-                        }
-                        objectiveL.validate();
-                        survivalL.validate();
-                        altruismL.validate();
-                        boldnessL.validate();
-                        unknownL.validate();
-                        totalL.validate();
-                        System.out.println("UI: " + (System.currentTimeMillis() - uiTime));
+                    if (bps.boldness >= 5000) {
+                        boldnessL.setForeground(Color.RED);
                     }
+                    if (bps.unknown >= 5000) {
+                        unknownL.setForeground(Color.RED);
+                    }
+                    objectiveL.validate();
+                    survivalL.validate();
+                    altruismL.validate();
+                    boldnessL.validate();
+                    unknownL.validate();
+                    totalL.validate();
+//                    System.out.println("UI: " + (System.currentTimeMillis() - uiTime));
                 }
+
+                // Sleep
+                try {
+                    TimeUnit.MILLISECONDS.sleep(sleepTime);
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+                System.out.println("Full: " + (System.currentTimeMillis() - initTime));
             }
         }
     }
 
-    private class BackgroundBPRead extends SwingWorker<Integer, String> {
-
-        @Override
-        protected Integer doInBackground() throws Exception {
-            while (!packQueue.isEmpty()) {
-                long readTime = System.currentTimeMillis();
-                BloodPacket pack = readBloodPacket(packQueue.poll());
-                System.out.println("Read: " + (System.currentTimeMillis() - readTime));
-                long addTime = System.currentTimeMillis();
-                bps.add(pack);
-                System.out.println("Add: " + (System.currentTimeMillis() - addTime));
-                long uiTime = System.currentTimeMillis();
-                objectiveL.setText("" + bps.objective);
-                survivalL.setText("" + bps.survival);
-                altruismL.setText("" + bps.altruism);
-                boldnessL.setText("" + bps.boldness);
-                unknownL.setText("" + bps.unknown);
-                totalL.setText("" + (bps.objective + bps.survival + bps.altruism + bps.boldness + bps.unknown));
-                if (bps.objective >= 5000) {
-                    objectiveL.setForeground(Color.RED);
-                }
-                if (bps.survival >= 5000) {
-                    survivalL.setForeground(Color.RED);
-                }
-                if (bps.altruism >= 5000) {
-                    altruismL.setForeground(Color.RED);
-                }
-                if (bps.boldness >= 5000) {
-                    boldnessL.setForeground(Color.RED);
-                }
-                if (bps.unknown >= 5000) {
-                    unknownL.setForeground(Color.RED);
-                }
-                objectiveL.validate();
-                survivalL.validate();
-                altruismL.validate();
-                boldnessL.validate();
-                unknownL.validate();
-                totalL.validate();
-                System.out.println("UI: " + (System.currentTimeMillis() - uiTime));
-            }
-            return 1;
-        }
+    private static double percDiff(double a, double b) {
+        double temp = 1 - (a / b);
+        return Math.abs(temp);
     }
 
     private static BufferedImage getScreenCapture(int position) {
         try {
-            GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-            GraphicsDevice mainScreen = ge.getDefaultScreenDevice();
-            Robot screenCapBot = new Robot(mainScreen);
-            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-            int widthArea = (int) Math.round(screenSize.getHeight() / 4);
-            int heightArea = (int) Math.round(screenSize.getHeight() / 13.5);
-            Rectangle captureArea = new Rectangle((widthArea / 2), (screenSize.height / 2) + (heightArea * position), (widthArea * 3 / 4), heightArea);
             BufferedImage screenCapture = screenCapBot.createScreenCapture(captureArea);
 //            ImageIO.write(screenCapture, format, new File(fileName));
             return screenCapture;
@@ -473,7 +463,6 @@ public class BPCounter extends JFrame {
     private BloodPacket readBloodPacket(BloodPacket pack) {
         try {
             String text = tesseract.doOCR(pack.snap);
-//            System.out.println(text);
             String token[] = text.split("\n");
             String name = "";
             name = name + token[0];
@@ -496,7 +485,7 @@ public class BPCounter extends JFrame {
     class BloodPacket {
 
         String category;
-        String name;
+        String name, fname;
         int points;
         BufferedImage snap;
         long time;
@@ -514,6 +503,7 @@ public class BPCounter extends JFrame {
             classify(category0, "GOOD SKILL CHECK", 0, 150);
             classify(category0, "GREAT SKILL CHECK", 0, 150);
             classify(category0, "WAKE UP!", 0, 150);
+            classify(category0, "HEAL", 1, 500);
 
             // OBJECTIVE ---------------------------------------
             classify(category1, "COOP ACTION", 1, 8000);
@@ -530,7 +520,7 @@ public class BPCounter extends JFrame {
             // SURVIVAL ---------------------------------------
             classify(category2, "KILLER GRASP ESCAPE", 0, 500);
             classify(category2, "STRUGGLE", 5, 898);
-            classify(category2, "SELF-HEALING", 1, 300);
+//            classify(category2, "HEAL", 1, 300);
             classify(category2, "SURVIVED", 0, 5000);
             classify(category2, "TRAP ESCAPE", 0, 500);
             classify(category2, "HOOK ESCAPE", 0, 1500);
@@ -541,7 +531,7 @@ public class BPCounter extends JFrame {
             // ALTRUISM ---------------------------------------
             classify(category3, "ASSIST", 250, 315);
             classify(category3, "DISTRACTION", 0, 250);
-            classify(category3, "HEAL", 400, 500);
+//            classify(category3, "HEAL", 400, 500);
             classify(category3, "TRAP RESCUE", 1000, 1250);
             classify(category3, "KILLER GRASP RESCUE", 0, 1250);
 //            classify(category3, "GOOD SKILL CHECK");
@@ -572,13 +562,18 @@ public class BPCounter extends JFrame {
         }
 
         private void classify(String category, String testName, int min, int max) {
-            double temp = similarity(this.name, testName);
-            if (temp >= this.precision && temp > this.accuracy && this.points >= min && this.points <= max) {
-                this.accuracy = temp;
-                this.category = category;
-            }
-            if (temp >= 90 && !(this.points >= min && this.points <= max)) {
-                this.points = min;
+            double similarity = similarity(this.name, testName);
+            if (similarity >= this.precision && similarity > this.accuracy) {
+                if (min <= this.points && this.points <= max) {
+                    this.accuracy = similarity;
+                    this.category = category;
+                    this.fname = testName;
+                } else if (similarity >= 0.9) {
+                    this.accuracy = similarity;
+                    this.category = category;
+                    this.fname = testName;
+                    this.points = min;
+                }
             }
         }
     }
@@ -635,9 +630,11 @@ public class BPCounter extends JFrame {
             }
             log.setText("\n" + log.getText());
             if (debug) {
-                log.setText(" (" + (int) Math.round(pack.accuracy * 100) + "%)" + log.getText());
+                log.setText(pack.category + " - " + pack.name + ": " + pack.points + " (" + (int) Math.round(pack.accuracy * 100) + "%)" + log.getText());
             }
-            log.setText(pack.category + " - " + pack.name + ": " + pack.points + log.getText());
+            else {
+                log.setText(pack.category + " - " + pack.fname + ": " + pack.points + log.getText());
+            }
             log.validate();
             try {
                 File outputFile = new File("./debug/" + pack.category + "-" + pack.name + "-" + pack.points + "." + format);
