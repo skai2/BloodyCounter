@@ -13,6 +13,7 @@ import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.AdjustmentEvent;
 import java.awt.event.AdjustmentListener;
 import java.awt.event.ItemEvent;
@@ -36,6 +37,7 @@ import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
+import javax.swing.JComboBox;
 
 /**
  *
@@ -61,10 +63,10 @@ public class BPCounter extends JFrame {
     private static JTextArea log = new JTextArea();
     private final static int windowX = 340;
     private final static int windowY = 300;
-    private final static int sleepTime = 50;
+    private static int sleepTime = 25;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
-    private final static String version = "17.11.17.00.24";
+    private final static String version = "17.11.17.01.02";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -139,6 +141,26 @@ public class BPCounter extends JFrame {
         });
         add(scroll);
 
+        add(new JLabel("Sleep:"));
+        JComboBox sleepBox = new JComboBox<Integer>();
+        sleepBox.addItem(10);
+        sleepBox.addItem(25);
+        sleepBox.addItem(50);
+        sleepBox.addItem(100);
+        sleepBox.addItem(250);
+        sleepBox.addItem(500);
+        sleepBox.addItem(1000);
+        sleepBox.setSelectedItem(100);
+        sleepBox.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent event) {
+                JComboBox<Integer> combo = (JComboBox<Integer>) event.getSource();
+                sleepTime = (int)combo.getSelectedItem();
+                System.out.println(sleepTime);
+            }
+        });
+        add(sleepBox);
+        
         JToggleButton processingToggle = new JToggleButton("No Pre-Processing");
         ItemListener processingListener = new ItemListener() {
             public void itemStateChanged(ItemEvent itemEvent) {
@@ -151,7 +173,7 @@ public class BPCounter extends JFrame {
             }
         };
         processingToggle.addItemListener(processingListener);
-        add(processingToggle);
+//        add(processingToggle);
 
         JToggleButton debugToggle = new JToggleButton("Debug");
         ItemListener debugListener = new ItemListener() {
