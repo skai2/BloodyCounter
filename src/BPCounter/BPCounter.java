@@ -4,9 +4,11 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.EventQueue;
 import java.awt.FlowLayout;
+import java.awt.Graphics2D;
 import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
+import java.awt.Image;
 import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.Toolkit;
@@ -62,7 +64,7 @@ public class BPCounter extends JFrame {
     private final static int sleepTime = 50;
     private static Boolean noProcessing = false;
     private static Boolean debug = false;
-    private final static String version = "17.11.16.00.29";
+    private final static String version = "17.11.17.00.24";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -192,7 +194,7 @@ public class BPCounter extends JFrame {
             totalL.validate();
         });
         add(reset);
-        
+
         add(new JLabel("version: " + version));
     }
 
@@ -295,8 +297,10 @@ public class BPCounter extends JFrame {
 //        Imgproc.erode(resultMat2, resultMat2, element);
 
         Core.multiply(resultMat1, resultMat2, resultMat);
+        Core.bitwise_not(resultMat, resultMat);
 
         BufferedImage resultImage = mat2Img(resultMat);
+        resultImage = img2BufferedImage(resultImage.getScaledInstance(resultImage.getWidth() * 3, resultImage.getHeight() * 3, Image.SCALE_SMOOTH));
         try {
 //            ImageIO.write(resultImage, format, new File(fileName));
         } catch (Exception ex) {
@@ -353,6 +357,23 @@ public class BPCounter extends JFrame {
 
         out.getRaster().setDataElements(0, 0, width, height, data);
         return out;
+    }
+
+    private static BufferedImage img2BufferedImage(Image img) {
+        if (img instanceof BufferedImage) {
+            return (BufferedImage) img;
+        }
+
+        // Create a buffered image with transparency
+        BufferedImage bimage = new BufferedImage(img.getWidth(null), img.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+
+        // Draw the image on to the buffered image
+        Graphics2D bGr = bimage.createGraphics();
+        bGr.drawImage(img, 0, 0, null);
+        bGr.dispose();
+
+        // Return the buffered image
+        return bimage;
     }
 
     private BloodPacket readBloodPacket(BufferedImage image) {
@@ -486,8 +507,8 @@ public class BPCounter extends JFrame {
             }
             long elapsedTime = System.currentTimeMillis() - lastTime;
             if ((lastPack != null && elapsedTime < 3500
-                    && (similarity(pack.name, lastPack.name) >= precision && 
-                       (((double)(pack.points / lastPack.points) > 0.9) || (double)(pack.points / lastPack.points) < 1.1)))
+                    && (similarity(pack.name, lastPack.name) >= precision
+                    && (((double) (pack.points / lastPack.points) > 0.9) || (double) (pack.points / lastPack.points) < 1.1)))
                     || pack.points < 0) {
                 return;
             }
@@ -514,7 +535,9 @@ public class BPCounter extends JFrame {
                 return;
             }
             log.append(pack.category + " - " + pack.name + ": " + pack.points);
-            if (debug) log.append(" (" + (int) Math.round(pack.accuracy * 100) + "%)");
+            if (debug) {
+                log.append(" (" + (int) Math.round(pack.accuracy * 100) + "%)");
+            }
             log.append("\n");
             log.validate();
 //            System.out.println(pack.category  + " (" +  pack.accuracy*100 + "%) " + pack.name  + " " +  pack.points);
