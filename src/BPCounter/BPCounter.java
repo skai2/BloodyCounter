@@ -87,7 +87,7 @@ public class BPCounter extends JFrame {
     private SwingWorker fetchWorker;
     
     // Version String
-    private final static String version = "17.11.17.20.38";
+    private final static String version = "17.11.17.23.26";
 
     public static void main(String[] args) {
         EventQueue.invokeLater(() -> {
@@ -119,7 +119,7 @@ public class BPCounter extends JFrame {
         widthArea = (int) Math.round(screenSize.getHeight() / 4);
         heightArea = (int) Math.round(screenSize.getHeight() / 13.5);
         captureArea = new Rectangle((widthArea / 2), (screenSize.height / 2), (widthArea * 3 / 4), heightArea);
-        captureSize = captureArea.height * captureArea.width;
+        captureSize = captureArea.height *3 * captureArea.width *3;
 
         // Initiate
         InitUI();
@@ -271,7 +271,7 @@ public class BPCounter extends JFrame {
             Mat testBlack = new Mat();
             while (true) {
                 // Begin by capturing screen
-                long initTime = System.currentTimeMillis();
+//                long initTime = System.currentTimeMillis();
                 BufferedImage screen = getScreenCapture(0);
 
                 // Process capture
@@ -287,10 +287,10 @@ public class BPCounter extends JFrame {
 //                    prevRatio = ratioBW;
 
                     // Do OCR
+//                    long readTime = System.currentTimeMillis();
                     packQueue.add(new BloodPacket("err", -1, screen, System.currentTimeMillis()));
-                    long readTime = System.currentTimeMillis();
                     BloodPacket pack = readBloodPacket(packQueue.poll());
-                    System.out.println("Read: " + (System.currentTimeMillis() - readTime));
+//                    System.out.println("Read: " + (System.currentTimeMillis() - readTime));
 
                     // Try adding packet to counter
 //                    long addTime = System.currentTimeMillis();
@@ -335,7 +335,7 @@ public class BPCounter extends JFrame {
                 } catch (Exception ex) {
                     ex.printStackTrace();
                 }
-                System.out.println("Full: " + (System.currentTimeMillis() - initTime));
+//                System.out.println("Full: " + (System.currentTimeMillis() - initTime));
             }
         }
     }
